@@ -22,6 +22,15 @@ object YouTubeMusicApi {
                 }
             }
 
+    suspend fun ping(baseUrl: String): Boolean {
+        return try {
+            val response = client.get(baseUrl)
+            response.status.value in 200..299
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     suspend fun search(query: String, scope: String?, maxRetries: Int = 3): String {
         var lastException: Exception? = null
 

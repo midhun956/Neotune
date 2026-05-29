@@ -1,9 +1,11 @@
 package com.example.neotune
 
 import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.serialization.Serializable
 
 sealed interface SearchResultItem
 
+@Serializable
 data class SongResult(
         val title: String,
         val artist: String?,
@@ -13,12 +15,14 @@ data class SongResult(
         val duration: String? = null,
 ) : SearchResultItem
 
+@Serializable
 data class ArtistResult(
         val name: String,
         val thumbnailUrl: String?,
         val browseId: String?,
 ) : SearchResultItem
 
+@Serializable
 data class AlbumResult(
         val title: String,
         val artists: String?,
@@ -27,6 +31,7 @@ data class AlbumResult(
         val browseId: String?,
 ) : SearchResultItem
 
+@Serializable
 data class PlaylistResult(
         val name: String,
         val author: String?,

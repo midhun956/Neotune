@@ -1,5 +1,18 @@
 package com.example.neotune.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import androidx.palette.graphics.Palette
+import coil.ImageLoader
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -51,17 +64,115 @@ fun ExpandedPlayerSheet(
     var newPlaylistName by remember { mutableStateOf("") }
     var showQueue by remember { mutableStateOf(false) }
 
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(24.dp)
-        ) {
+    val context = LocalContext.current
+    val backgroundStyle = viewModel.nowPlayingBackgroundStyle.value
+    val highResUrl = remember(song.thumbnailUrl) {
+        song.thumbnailUrl?.replace(Regex("=w\\d+-h\\d+-"), "=w1080-h1080-")
+    }
+
+    var targetColorTop by remember { mutableStateOf(Color(0xFF2C2C2C)) }
+    var targetColorBottom by remember { mutableStateOf(Color(0xFF0F0F0F)) }
+
+    val animatedColorTop by animateColorAsState(
+        targetValue = targetColorTop,
+        animationSpec = tween(durationMillis = 1000),
+        label = "ColorTop"
+    )
+    val animatedColorBottom by animateColorAsState(
+        targetValue = targetColorBottom,
+        animationSpec = tween(durationMillis = 1000),
+        label = "ColorBottom"
+    )
+
+    LaunchedEffect(song.videoId) {
+        val url = highResUrl
+        if (url != null) {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val loader = context.imageLoader
+                    val request = ImageRequest.Builder(context)
+                        .data(url)
+                        .allowHardware(false)
+                        .build()
+                    loader.execute(request)
+                }
+                if (result is SuccessResult) {
+                    val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                    if (bitmap != null) {
+                        val palette = withContext(Dispatchers.IO) {
+                            Palette.from(bitmap).generate()
+                        }
+                        
+                        // Extract a vibrant or dominant swatch to use for a rich top color
+                        val swatch = palette.vibrantSwatch 
+                            ?: palette.darkVibrantSwatch 
+                            ?: palette.dominantSwatch
+                        
+                        val topColorInt = swatch?.rgb ?: 0xFF2C2C2C.toInt()
+                        val bottomColorInt = palette.getDarkMutedColor(
+                            palette.getDarkVibrantColor(0xFF0F0F0F.toInt())
+                        )
+                        
+                        val rawTop = Color(topColorInt)
+                        val rawBottom = Color(bottomColorInt)
+                        
+                        // Ensure color pop by limiting minimum intensity and scaling nicely (highly accurate and vibrant matching)
+                        val blendedTop = Color(
+                            red = (rawTop.red * 0.8f).coerceIn(0.08f, 0.95f),
+                            green = (rawTop.green * 0.8f).coerceIn(0.08f, 0.95f),
+                            blue = (rawTop.blue * 0.8f).coerceIn(0.08f, 0.95f),
+                            alpha = 1f
+                        )
+                        val blendedBottom = Color(
+                            red = (rawBottom.red * 0.25f).coerceIn(0.02f, 0.18f),
+                            green = (rawBottom.green * 0.25f).coerceIn(0.02f, 0.18f),
+                            blue = (rawBottom.blue * 0.25f).coerceIn(0.02f, 0.18f),
+                            alpha = 1f
+                        )
+                        
+                        targetColorTop = blendedTop
+                        targetColorBottom = blendedBottom
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } else {
+            targetColorTop = Color(0xFF2C2C2C)
+            targetColorBottom = Color(0xFF0F0F0F)
+        }
+    }
+
+    val backgroundModifier = if (backgroundStyle == "gradient") {
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(animatedColorTop, animatedColorBottom)
+                )
+            )
+    } else {
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    }
+
+    val contentColor = Color.White
+    val secondaryContentColor = Color.LightGray
+
+    Surface(
+        modifier = backgroundModifier,
+        color = Color.Transparent
+    ) {
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+            ) {
             IconButton(onClick = onClose, modifier = Modifier.align(Alignment.Start)) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close")
             }
             Spacer(Modifier.weight(1f))
-            val highResUrl = song.thumbnailUrl?.replace(Regex("=w\\d+-h\\d+-"), "=w1080-h1080-")
-
             if (highResUrl != null) {
                 Image(
                         painter = rememberAsyncImagePainter(highResUrl),
@@ -98,7 +209,7 @@ fun ExpandedPlayerSheet(
             Text(
                     song.artist ?: "Unknown Artist",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.Gray,
+                    color = secondaryContentColor,
                     textAlign = TextAlign.Center
             )
             Spacer(Modifier.weight(1f))
@@ -107,18 +218,23 @@ fun ExpandedPlayerSheet(
                     value = if (duration > 0) playbackPosition.toFloat() else 0f,
                     onValueChange = { onSeek(it.toLong()) },
                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = contentColor,
+                        inactiveTrackColor = contentColor.copy(alpha = 0.24f),
+                        thumbColor = contentColor
+                    )
             )
             Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
                 Text(
                         formatTime(playbackPosition),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = secondaryContentColor
                 )
                 Text(
                         formatTime(duration),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
+                        color = secondaryContentColor
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -128,10 +244,10 @@ fun ExpandedPlayerSheet(
                     verticalAlignment = Alignment.CenterVertically
             ) {
                 val likeIcon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder
-                val likeIconTint = if (isLiked) MaterialTheme.colorScheme.primary else Color.Gray
+                val likeIconTint = if (isLiked) MaterialTheme.colorScheme.primary else secondaryContentColor
                 val playPauseIcon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
                 val playPauseDescription = if (isPlaying) "Pause" else "Play"
-                val loopIconTint = if (isLooping) MaterialTheme.colorScheme.primary else Color.Gray
+                val loopIconTint = if (isLooping) MaterialTheme.colorScheme.primary else secondaryContentColor
 
                 IconButton(onClick = onLike) {
                     Icon(imageVector = likeIcon, contentDescription = "Like", tint = likeIconTint)
@@ -140,19 +256,20 @@ fun ExpandedPlayerSheet(
                     Icon(
                             Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp),
+                            tint = contentColor
                     )
                 }
                 IconButton(
                         onClick = onPlayPause,
                         modifier =
                                 Modifier.size(64.dp)
-                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                        .background(Color.White, CircleShape)
                 ) {
                     Icon(
                             imageVector = playPauseIcon,
                             contentDescription = playPauseDescription,
-                            tint = Color.White,
+                            tint = Color(0xFF1C1B1F),
                             modifier = Modifier.size(42.dp)
                     )
                 }
@@ -160,7 +277,8 @@ fun ExpandedPlayerSheet(
                     Icon(
                             Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(36.dp),
+                            tint = contentColor
                     )
                 }
                 IconButton(onClick = onToggleLoop) {
@@ -208,6 +326,7 @@ fun ExpandedPlayerSheet(
                 }
             }
         }
+        }
     }
 
     if (showQueue) {
@@ -217,35 +336,70 @@ fun ExpandedPlayerSheet(
                 containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                val queue = viewModel.queue.value
+                val history = viewModel.playbackHistory.value
+
                 Text(
-                        text = "Up Next",
+                        text = "Queue & History",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(bottom = 16.dp)
                 )
 
-                val queue = viewModel.queue.value
-                if (queue.isEmpty()) {
+                if (queue.isEmpty() && history.isEmpty()) {
                     Text(
-                            text = "No songs in queue",
+                            text = "No songs in queue or history",
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.Gray,
                             modifier = Modifier.padding(bottom = 32.dp)
                     )
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                        itemsIndexed(queue) { index, queuedSong ->
-                            SongRowItem(
-                                    song = queuedSong,
-                                    onSongClick = {
-                                        // Jump to this song in the queue
-                                        viewModel.playSong(queuedSong)
-                                        // Remove this song and all previous songs from the queue
-                                        viewModel.queue.value = queue.drop(index + 1)
-                                        showQueue = false
-                                    },
-                                    viewModel = viewModel
-                            )
+                        if (history.isNotEmpty()) {
+                            item {
+                                Text(
+                                        text = "History",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                            itemsIndexed(history) { index, historySong ->
+                                SongRowItem(
+                                        song = historySong,
+                                        onSongClick = {
+                                            viewModel.selectSong(historySong, clearQueue = false)
+                                            showQueue = false
+                                        },
+                                        viewModel = viewModel
+                                )
+                            }
+                        }
+
+                        if (queue.isNotEmpty()) {
+                            item {
+                                Text(
+                                        text = "Up Next",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                                )
+                            }
+                            itemsIndexed(queue) { index, queuedSong ->
+                                SongRowItem(
+                                        song = queuedSong,
+                                        onSongClick = {
+                                            // Jump to this song in the queue
+                                            viewModel.playSong(queuedSong)
+                                            // Remove this song and all previous songs from the queue
+                                            viewModel.queue.value = queue.drop(index + 1)
+                                            showQueue = false
+                                        },
+                                        viewModel = viewModel
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(32.dp))

@@ -1,13 +1,15 @@
 package com.example.neotune
 
+import android.app.Application
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.ViewModel
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -18,7 +20,9 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-class SearchViewModel : ViewModel() {
+class SearchViewModel(application: Application) : AndroidViewModel(application) {
+    private val ctx get() = getApplication<Application>()
+
     // --- Data for Search Screen ---
     private val _searchResults = mutableStateOf<List<SearchResultItem>>(emptyList())
     val searchResults: State<List<SearchResultItem>> = _searchResults
@@ -54,11 +58,10 @@ class SearchViewModel : ViewModel() {
     private val _currentSong = mutableStateOf<SongResult?>(null)
     val currentSong: State<SongResult?> = _currentSong
 
-    // Changing queue to MutableState so we can update it directly from UI components if needed
     val queue = mutableStateOf<List<SongResult>>(emptyList())
     private val _queue
         get() = queue
-    var exoPlayer: ExoPlayer? = null
+    var exoPlayer: Player? = null
 
     // --- User Library State ---
     private val _likedSongs = mutableStateOf<List<SongResult>>(emptyList())
@@ -69,6 +72,110 @@ class SearchViewModel : ViewModel() {
     val playlistSongCounts: State<Map<String, Int>> = _playlistSongCounts
     val isLooping = mutableStateOf(false)
     var loopMode = mutableIntStateOf(Player.REPEAT_MODE_OFF)
+    val playbackHistory = mutableStateOf<List<SongResult>>(emptyList())
+    val nowPlayingBackgroundStyle = mutableStateOf("gradient")
+    val appThemeStyle = mutableStateOf("material")
+    val amoledAccentColor = mutableStateOf("purple")
+    val backendIp = mutableStateOf("10.242.137.112")
+    val isCheckingConnection = mutableStateOf(false)
+    val connectionStatus = mutableStateOf<Boolean?>(null)
+
+    // --- Recently Played ---
+    private val _recentlyPlayed = mutableStateOf<List<SongResult>>(emptyList())
+    val recentlyPlayed: State<List<SongResult>> = _recentlyPlayed
+
+    // --- Trending ---
+    private val _trendingSongs = mutableStateOf<List<SongResult>>(emptyList())
+    val trendingSongs: State<List<SongResult>> = _trendingSongs
+    private val _isLoadingTrending = mutableStateOf(false)
+    val isLoadingTrending: State<Boolean> = _isLoadingTrending
+
+    // --- Quick Picks ---
+    private val _quickPicksSongs = mutableStateOf<List<SongResult>>(emptyList())
+    val quickPicksSongs: State<List<SongResult>> = _quickPicksSongs
+    private val _isLoadingQuickPicks = mutableStateOf(false)
+    val isLoadingQuickPicks: State<Boolean> = _isLoadingQuickPicks
+
+    init {
+        // Load persisted data and dynamically upgrade all saved thumbnails to high-definition
+        _likedSongs.value = LocalStorage.loadLikedSongs(ctx).map { 
+            it.copy(thumbnailUrl = getHighQualityThumbnailUrl(it.thumbnailUrl)) 
+        }
+        
+        _playlists.value = LocalStorage.loadPlaylists(ctx).mapValues { entry ->
+            entry.value.map { it.copy(thumbnailUrl = getHighQualityThumbnailUrl(it.thumbnailUrl)) }
+        }
+        
+        _recentlyPlayed.value = LocalStorage.loadRecentlyPlayed(ctx).map { 
+            it.copy(thumbnailUrl = getHighQualityThumbnailUrl(it.thumbnailUrl)) 
+        }
+        
+        updatePlaylistSongCounts()
+        loadTrending()
+        loadQuickPicks()
+        nowPlayingBackgroundStyle.value = LocalStorage.loadNPBackgroundStyle(ctx)
+        appThemeStyle.value = LocalStorage.loadAppThemeStyle(ctx)
+        amoledAccentColor.value = LocalStorage.loadAmoledAccent(ctx)
+        
+        val storedIp = LocalStorage.loadBackendIp(ctx)
+        backendIp.value = storedIp
+        Config.BACKEND_BASE_URL = formatBackendUrl(storedIp)
+    }
+
+    private fun formatBackendUrl(input: String): String {
+        var cleaned = input.trim()
+        if (cleaned.startsWith("http://")) {
+            cleaned = cleaned.removePrefix("http://")
+        } else if (cleaned.startsWith("https://")) {
+            cleaned = cleaned.removePrefix("https://")
+        }
+        if (cleaned.endsWith("/")) {
+            cleaned = cleaned.removeSuffix("/")
+        }
+        if (cleaned.isBlank()) {
+            return "http://10.242.137.112:8000"
+        }
+        return if (cleaned.contains(":")) {
+            "http://$cleaned"
+        } else {
+            "http://$cleaned:8000"
+        }
+    }
+
+    fun setNowPlayingBackgroundStyle(style: String) {
+        nowPlayingBackgroundStyle.value = style
+        LocalStorage.saveNPBackgroundStyle(ctx, style)
+    }
+
+    fun setAppThemeStyle(style: String) {
+        appThemeStyle.value = style
+        LocalStorage.saveAppThemeStyle(ctx, style)
+    }
+
+    fun setAmoledAccent(accent: String) {
+        amoledAccentColor.value = accent
+        LocalStorage.saveAmoledAccent(ctx, accent)
+    }
+
+    fun setBackendIp(ip: String) {
+        val trimmed = ip.trim()
+        backendIp.value = trimmed
+        LocalStorage.saveBackendIp(ctx, trimmed)
+        Config.BACKEND_BASE_URL = formatBackendUrl(trimmed)
+        connectionStatus.value = null
+        loadTrending()
+        loadQuickPicks()
+    }
+
+    fun checkConnection(ip: String) {
+        viewModelScope.launch {
+            isCheckingConnection.value = true
+            connectionStatus.value = null
+            val url = formatBackendUrl(ip)
+            connectionStatus.value = YouTubeMusicApi.ping(url)
+            isCheckingConnection.value = false
+        }
+    }
 
     fun clearError() {
         _error.value = null
@@ -100,7 +207,7 @@ class SearchViewModel : ViewModel() {
             _error.value = null
             try {
                 val response = YouTubeMusicApi.search(query, filter)
-                val results = parseSearchResults(response, filter) // Pass filter to parser
+                val results = parseSearchResults(response, filter)
                 _searchResults.value = results
             } catch (e: Exception) {
                 _error.value = "Search failed: ${e.message}"
@@ -110,39 +217,87 @@ class SearchViewModel : ViewModel() {
         }
     }
 
-    fun selectSong(song: SongResult, clearQueue: Boolean = true) {
+    private fun broadcastLikeState(song: SongResult?) {
+        if (song == null) return
+        val isLiked = isLiked(song)
+        val intent = android.content.Intent("com.example.neotune.ACTION_UPDATE_LIKE").apply {
+            setPackage(ctx.packageName)
+            putExtra("is_liked", isLiked)
+        }
+        ctx.sendBroadcast(intent)
+    }
+
+    fun selectSong(song: SongResult, clearQueue: Boolean = true, addToHistory: Boolean = true) {
+        val prev = _selectedSong.value
+        val historyList = playbackHistory.value.toMutableList()
+
+        if (addToHistory && prev != null && prev.videoId != song.videoId) {
+            historyList.removeAll { it.videoId == prev.videoId }
+            historyList.add(0, prev)
+        }
+        // Ensure the newly selected song is not in the history stack
+        historyList.removeAll { it.videoId == song.videoId }
+        playbackHistory.value = historyList
+
         _selectedSong.value = song
+        broadcastLikeState(song)
         if (clearQueue) {
             _queue.value = listOf(song)
             fetchAndQueueRecommendations(song.videoId)
         }
         playSelectedSong(song.videoId)
+        // Track recently played (deduplicate, max 30)
+        val current = _recentlyPlayed.value.toMutableList()
+        current.removeAll { it.videoId == song.videoId }
+        current.add(0, song)
+        if (current.size > 30) current.subList(30, current.size).clear()
+        _recentlyPlayed.value = current
+        LocalStorage.saveRecentlyPlayed(ctx, current)
     }
 
     fun playNext() {
         val currentSong = selectedSong.value ?: return
         val queueList = queue.value
 
-        // If the queue is not empty, play the first item in the upcoming queue
         if (queueList.isNotEmpty()) {
             val nextSong = queueList.first()
             _queue.value = queueList.drop(1)
             selectSong(nextSong, clearQueue = false)
 
-            // If the queue is running low, fetch more recommendations based on the new song
             if (_queue.value.size < 5) {
                 fetchAndQueueRecommendations(nextSong.videoId)
             }
         } else {
-            // If the queue is empty, fetch recommendations based on the current song
             fetchAndQueueRecommendations(currentSong.videoId)
         }
     }
 
     fun playPrevious() {
-        // Since we now dequeue items when playing next, we don't have a history yet.
-        // For now, restarting the current song if possible.
-        exoPlayer?.seekTo(0)
+        val player = exoPlayer
+        if (player != null && player.currentPosition > 3000) {
+            player.seekTo(0)
+            return
+        }
+
+        val historyList = playbackHistory.value.toMutableList()
+        if (historyList.isNotEmpty()) {
+            val prevSong = historyList.removeAt(0)
+            playbackHistory.value = historyList
+
+            // Put current song to front of queue
+            val current = _selectedSong.value
+            if (current != null) {
+                val qList = _queue.value.toMutableList()
+                qList.removeAll { it.videoId == current.videoId }
+                qList.add(0, current)
+                _queue.value = qList
+            }
+
+            // Play previous song without adding current song back to history again
+            selectSong(prevSong, clearQueue = false, addToHistory = false)
+        } else {
+            exoPlayer?.seekTo(0)
+        }
     }
 
     fun toggleLoop() {
@@ -169,6 +324,10 @@ class SearchViewModel : ViewModel() {
             currentLiked.add(song)
         }
         _likedSongs.value = currentLiked
+        LocalStorage.saveLikedSongs(ctx, currentLiked)
+        if (selectedSong.value?.videoId == song.videoId) {
+            broadcastLikeState(song)
+        }
     }
 
     fun createPlaylist(name: String) {
@@ -177,6 +336,7 @@ class SearchViewModel : ViewModel() {
             currentPlaylists[name] = emptyList()
             _playlists.value = currentPlaylists
             updatePlaylistSongCounts()
+            LocalStorage.savePlaylists(ctx, currentPlaylists)
         }
     }
 
@@ -185,6 +345,7 @@ class SearchViewModel : ViewModel() {
         currentPlaylists.remove(name)
         _playlists.value = currentPlaylists
         updatePlaylistSongCounts()
+        LocalStorage.savePlaylists(ctx, currentPlaylists)
     }
 
     fun addSongToPlaylist(playlistName: String, song: SongResult) {
@@ -195,7 +356,18 @@ class SearchViewModel : ViewModel() {
             currentPlaylists[playlistName] = currentSongs
             _playlists.value = currentPlaylists
             updatePlaylistSongCounts()
+            LocalStorage.savePlaylists(ctx, currentPlaylists)
         }
+    }
+
+    fun removeSongFromPlaylist(playlistName: String, song: SongResult) {
+        val currentPlaylists = _playlists.value.toMutableMap()
+        val currentSongs = currentPlaylists[playlistName]?.toMutableList() ?: return
+        currentSongs.removeAll { it.videoId == song.videoId }
+        currentPlaylists[playlistName] = currentSongs
+        _playlists.value = currentPlaylists
+        updatePlaylistSongCounts()
+        LocalStorage.savePlaylists(ctx, currentPlaylists)
     }
 
     fun addToQueue(song: SongResult) {
@@ -219,7 +391,6 @@ class SearchViewModel : ViewModel() {
     fun playAlbumSong(albumDetails: AlbumDetails, startIndex: Int) {
         if (startIndex !in albumDetails.tracks.indices) return
 
-        // 1. Play the clicked song
         val clickedTrack = albumDetails.tracks[startIndex]
         val song =
                 SongResult(
@@ -232,7 +403,6 @@ class SearchViewModel : ViewModel() {
                 )
         selectSong(song, clearQueue = false)
 
-        // 2. Queue up the remaining songs
         val remainingTracks =
                 albumDetails.tracks.drop(startIndex + 1).map { track ->
                     SongResult(
@@ -266,12 +436,56 @@ class SearchViewModel : ViewModel() {
         }
     }
 
+    fun loadTrending() {
+        viewModelScope.launch {
+            _isLoadingTrending.value = true
+            try {
+                val response = YouTubeMusicApi.getTrending()
+                if (response.isNotBlank()) {
+                    _trendingSongs.value = parseSongResultsOnly(response)
+                }
+            } catch (e: Exception) {
+                // Silently fail — trending is optional
+            } finally {
+                _isLoadingTrending.value = false
+            }
+        }
+    }
+
+    fun loadQuickPicks() {
+        viewModelScope.launch {
+            _isLoadingQuickPicks.value = true
+            try {
+                // Use the last recently played song as the seed, else general recommended
+                val seedId = _recentlyPlayed.value.firstOrNull()?.videoId
+                val response = YouTubeMusicApi.getRecommended(seedId)
+                if (response.isNotBlank()) {
+                    _quickPicksSongs.value = parseSongResultsOnly(response)
+                }
+            } catch (e: Exception) {
+                // Silently fail
+            } finally {
+                _isLoadingQuickPicks.value = false
+            }
+        }
+    }
+
     private fun playSelectedSong(videoId: String) {
+        val song = selectedSong.value
         viewModelScope.launch {
             try {
                 val audioUrl = YouTubeMusicApi.getBackendAudioUrl(videoId)
                 audioUrl?.let {
-                    val mediaItem = MediaItem.fromUri(it)
+                    val metadataBuilder = MediaMetadata.Builder()
+                    if (song != null) {
+                        metadataBuilder.setTitle(song.title)
+                        metadataBuilder.setArtist(song.artist ?: "Unknown Artist")
+                        metadataBuilder.setArtworkUri(Uri.parse(song.thumbnailUrl ?: ""))
+                    }
+                    val mediaItem = MediaItem.Builder()
+                            .setUri(it)
+                            .setMediaMetadata(metadataBuilder.build())
+                            .build()
                     exoPlayer?.apply {
                         stop()
                         setMediaItem(mediaItem)
@@ -344,15 +558,40 @@ class SearchViewModel : ViewModel() {
         }
     }
 
+    private fun getHighQualityThumbnailUrl(url: String?): String? {
+        if (url == null) return null
+        
+        // 1. Google/YouTube Music format: replace =wXXX-hXXX with =w544-h544
+        if (url.contains("=w") && url.contains("-h")) {
+            val regex = "=w\\d+-h\\d+".toRegex()
+            if (regex.containsMatchIn(url)) {
+                return url.replace(regex, "=w544-h544")
+            }
+        }
+        
+        // 2. YouTube standard video thumbnail: upgrade default/sddefault to hqdefault
+        if (url.contains("i.ytimg.com/vi/")) {
+            if (url.endsWith("/default.jpg")) {
+                return url.replace("/default.jpg", "/hqdefault.jpg")
+            }
+            if (url.endsWith("/sddefault.jpg")) {
+                return url.replace("/sddefault.jpg", "/hqdefault.jpg")
+            }
+        }
+        
+        return url
+    }
+
     private fun getThumbnailUrl(json: JsonElement): String? {
         val thumbnailNode = json.jsonObject["thumbnails"] ?: json.jsonObject["thumbnail"]
-        return thumbnailNode
+        val rawUrl = thumbnailNode
                 ?.jsonArray
                 ?.lastOrNull()
                 ?.jsonObject
                 ?.get("url")
                 ?.jsonPrimitive
                 ?.content
+        return getHighQualityThumbnailUrl(rawUrl)
     }
 
     private fun parseSongFromJson(json: JsonElement): SongResult? {
@@ -383,7 +622,6 @@ class SearchViewModel : ViewModel() {
 
     private fun parseAlbumFromJson(json: JsonElement): AlbumResult? {
         val obj = json.jsonObject
-        // The array of artists could be directly in 'artists'
         val artistsString =
                 obj["artists"]?.jsonArray?.joinToString(", ") {
                     it.jsonObject["name"]?.jsonPrimitive?.content ?: ""
@@ -400,7 +638,6 @@ class SearchViewModel : ViewModel() {
 
     private fun parsePlaylistFromJson(json: JsonElement): PlaylistResult? {
         val obj = json.jsonObject
-        // The author could be a string or we might need to extract it
         val author =
                 obj["author"]?.jsonPrimitive?.content
                         ?: obj["author"]
@@ -422,15 +659,10 @@ class SearchViewModel : ViewModel() {
     private fun parseArtistDetails(json: String): ArtistDetails? {
         return try {
             val root = Json.parseToJsonElement(json).jsonObject
-            // --- MODIFICATION START ---
-            // REASON: This is the fix for the build error. We first extract the name into a
-            // variable. If the name is null (missing from the JSON), we return null immediately,
-            // preventing the app from trying to create an ArtistDetails object with invalid data.
             val artistName = root["name"]?.jsonPrimitive?.content ?: return null
 
             ArtistDetails(
                     name = artistName,
-                    // --- MODIFICATION END ---
                     description = root["description"]?.jsonPrimitive?.content,
                     thumbnailUrl = getThumbnailUrl(root),
                     topSongs =

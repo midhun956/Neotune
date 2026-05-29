@@ -89,5 +89,7 @@ dependencies {
     // Coil Compose for image loading
     implementation(libs.coil.compose.v240)
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.amdroidx.media3.session)
     implementation(libs.androidx.material.icons.extended)
+    implementation(libs.androidx.palette.ktx)
 }

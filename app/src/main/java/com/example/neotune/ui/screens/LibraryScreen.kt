@@ -41,7 +41,6 @@ fun LibraryScreen(
         Column(
                 Modifier.fillMaxSize()
                         .padding(paddingValues)
-                        .padding(WindowInsets.systemBars.asPaddingValues())
                         .padding(16.dp)
         ) {
             Text("Library", style = MaterialTheme.typography.titleLarge)
