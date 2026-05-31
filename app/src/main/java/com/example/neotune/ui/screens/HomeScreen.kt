@@ -1,8 +1,9 @@
 package com.example.neotune.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -14,7 +15,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.example.neotune.SearchViewModel
+import com.example.neotune.SongOptionsSheet
 import com.example.neotune.SongResult
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,7 +100,8 @@ fun HomeScreen(
                 songs = quickPicks,
                 isLoading = isLoadingQuickPicks,
                 emptyMessage = "Start playing songs to get personalised picks",
-                onSongClick = onSongClick
+                onSongClick = onSongClick,
+                viewModel = viewModel
         )
         Spacer(Modifier.height(24.dp))
 
@@ -109,7 +112,8 @@ fun HomeScreen(
                     songs = recentlyPlayed.take(20),
                     isLoading = false,
                     emptyMessage = "",
-                    onSongClick = onSongClick
+                    onSongClick = onSongClick,
+                    viewModel = viewModel
             )
             Spacer(Modifier.height(24.dp))
         }
@@ -120,7 +124,8 @@ fun HomeScreen(
                 songs = trending,
                 isLoading = isLoadingTrending,
                 emptyMessage = "Couldn't load trending — make sure backend is running",
-                onSongClick = onSongClick
+                onSongClick = onSongClick,
+                viewModel = viewModel
         )
 
         Spacer(Modifier.height(120.dp)) // room for mini player
@@ -142,7 +147,8 @@ private fun HomeCarousel(
         songs: List<SongResult>,
         isLoading: Boolean,
         emptyMessage: String,
-        onSongClick: (SongResult) -> Unit
+        onSongClick: (SongResult) -> Unit,
+        viewModel: SearchViewModel
 ) {
     when {
         isLoading -> {
@@ -172,17 +178,24 @@ private fun HomeCarousel(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(songs) { song ->
-                    HomeCard(song = song, onClick = { onSongClick(song) })
+                    HomeCard(song = song, onClick = { onSongClick(song) }, viewModel = viewModel)
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HomeCard(song: SongResult, onClick: () -> Unit) {
+private fun HomeCard(song: SongResult, onClick: () -> Unit, viewModel: SearchViewModel) {
+    var showOptionsSheet by remember { mutableStateOf(false) }
     Column(
-            modifier = Modifier.width(150.dp).clickable { onClick() }.padding(bottom = 4.dp)
+            modifier = Modifier.width(150.dp)
+                    .combinedClickable(
+                            onClick = onClick,
+                            onLongClick = { showOptionsSheet = true }
+                    )
+                    .padding(bottom = 4.dp)
     ) {
         Box(
                 modifier =
@@ -225,5 +238,37 @@ private fun HomeCard(song: SongResult, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
             )
         }
+    }
+
+    if (showOptionsSheet) {
+        val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+        val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+        SongOptionsSheet(
+                song = song,
+                isLiked = viewModel.isLiked(song),
+                onDismiss = { showOptionsSheet = false },
+                onPlayNext = { viewModel.playNext(song) },
+                onAddToPlaylist = {
+                    viewModel.songToAddToPlaylist.value = song
+                    viewModel.showAddToPlaylistSheet.value = true
+                },
+                onAddToQueue = { viewModel.addToQueue(song) },
+                onLike = { viewModel.toggleLike(song) },
+                onViewArtist = {
+                    song.artist?.let { viewModel.searchAndNavigateToArtist(it) }
+                },
+                onViewAlbum = {
+                    song.album?.let { viewModel.searchAndNavigateToAlbum(it) }
+                },
+                isDownloaded = isDownloaded,
+                isDownloading = isDownloading,
+                onDownloadToggle = {
+                    if (isDownloaded) {
+                        viewModel.removeDownload(song.videoId)
+                    } else {
+                        viewModel.downloadSong(song)
+                    }
+                }
+        )
     }
 }

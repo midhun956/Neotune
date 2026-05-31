@@ -1,8 +1,10 @@
 package com.example.neotune.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,8 +14,9 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,18 +30,27 @@ import com.example.neotune.AlbumResult
 import com.example.neotune.ArtistResult
 import com.example.neotune.PlaylistResult
 import com.example.neotune.SearchViewModel
+import com.example.neotune.SongOptionsSheet
 import com.example.neotune.SongResult
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HorizontalSongItem(
         song: SongResult,
         onSongClick: (SongResult) -> Unit,
-        viewModel: SearchViewModel
+        viewModel: SearchViewModel,
+        onViewArtist: (() -> Unit)? = null,
+        onViewAlbum: (() -> Unit)? = null
 ) {
+        var showOptionsSheet by remember { mutableStateOf(false) }
+
         Column(
                 modifier =
                         Modifier.width(140.dp)
-                                .clickable { onSongClick(song) }
+                                .combinedClickable(
+                                        onClick = { onSongClick(song) },
+                                        onLongClick = { showOptionsSheet = true }
+                                )
                                 .padding(bottom = 8.dp)
         ) {
                 if (song.thumbnailUrl != null) {
@@ -87,6 +99,40 @@ fun HorizontalSongItem(
                                 color = Color.Gray
                         )
                 }
+        }
+
+        if (showOptionsSheet) {
+                val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+                val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+                SongOptionsSheet(
+                        song = song,
+                        isLiked = viewModel.isLiked(song),
+                        onDismiss = { showOptionsSheet = false },
+                        onPlayNext = { viewModel.playNext(song) },
+                        onAddToPlaylist = {
+                            viewModel.songToAddToPlaylist.value = song
+                            viewModel.showAddToPlaylistSheet.value = true
+                        },
+                        onAddToQueue = { viewModel.addToQueue(song) },
+                        onLike = { viewModel.toggleLike(song) },
+                        onViewArtist = {
+                            if (onViewArtist != null) onViewArtist.invoke()
+                            else song.artist?.let { viewModel.searchAndNavigateToArtist(it) }
+                        },
+                        onViewAlbum = {
+                            if (onViewAlbum != null) onViewAlbum.invoke()
+                            else song.album?.let { viewModel.searchAndNavigateToAlbum(it) }
+                        },
+                        isDownloaded = isDownloaded,
+                        isDownloading = isDownloading,
+                        onDownloadToggle = {
+                            if (isDownloaded) {
+                                viewModel.removeDownload(song.videoId)
+                            } else {
+                                viewModel.downloadSong(song)
+                            }
+                        }
+                )
         }
 }
 
@@ -147,13 +193,25 @@ fun HorizontalAlbumItem(album: AlbumResult, onAlbumClick: (AlbumResult) -> Unit)
         }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SongRowItem(song: SongResult, onSongClick: (SongResult) -> Unit, viewModel: SearchViewModel) {
+fun SongRowItem(
+        song: SongResult,
+        onSongClick: (SongResult) -> Unit,
+        viewModel: SearchViewModel,
+        onViewArtist: (() -> Unit)? = null,
+        onViewAlbum: (() -> Unit)? = null
+) {
+        var showOptionsSheet by remember { mutableStateOf(false) }
+
         Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier =
                         Modifier.fillMaxWidth()
-                                .clickable { onSongClick(song) }
+                                .combinedClickable(
+                                        onClick = { onSongClick(song) },
+                                        onLongClick = { showOptionsSheet = true }
+                                )
                                 .padding(vertical = 8.dp)
         ) {
                 if (song.thumbnailUrl != null) {
@@ -201,6 +259,26 @@ fun SongRowItem(song: SongResult, onSongClick: (SongResult) -> Unit, viewModel: 
                                 overflow = TextOverflow.Ellipsis
                         )
                 }
+                val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+                val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+
+                if (isDownloading) {
+                        CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                } else if (isDownloaded) {
+                        Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Downloaded",
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                }
+
                 if (song.duration != null) {
                         Text(
                                 song.duration,
@@ -209,13 +287,42 @@ fun SongRowItem(song: SongResult, onSongClick: (SongResult) -> Unit, viewModel: 
                                 modifier = Modifier.padding(horizontal = 8.dp)
                         )
                 }
-                IconButton(onClick = { viewModel.addToQueue(song) }) {
-                        Icon(
-                                Icons.AutoMirrored.Filled.QueueMusic,
-                                "Add to queue",
-                                tint = Color.Gray
-                        )
-                }
+        }
+
+        if (showOptionsSheet) {
+                val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+                val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+                SongOptionsSheet(
+                        song = song,
+                        isLiked = viewModel.isLiked(song),
+                        onDismiss = { showOptionsSheet = false },
+                        onPlayNext = { viewModel.playNext(song) },
+                        onAddToPlaylist = {
+                            viewModel.songToAddToPlaylist.value = song
+                            viewModel.showAddToPlaylistSheet.value = true
+                        },
+                        onAddToQueue = { viewModel.addToQueue(song) },
+                        onLike = { viewModel.toggleLike(song) },
+                        onViewArtist = {
+                            if (onViewArtist != null) onViewArtist.invoke()
+                            else song.artist?.let { viewModel.searchAndNavigateToArtist(it) }
+                        },
+                        onViewAlbum = {
+                            if (onViewAlbum != null) onViewAlbum.invoke()
+                            else song.album?.let { viewModel.searchAndNavigateToAlbum(it) }
+                        },
+                        isDownloaded = isDownloaded,
+                        isDownloading = isDownloading,
+                        onDownloadToggle = {
+                            if (isDownloading) {
+                                viewModel.cancelDownload(song.videoId)
+                            } else if (isDownloaded) {
+                                viewModel.removeDownload(song.videoId)
+                            } else {
+                                viewModel.downloadSong(song)
+                            }
+                        }
+                )
         }
 }
 

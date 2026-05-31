@@ -121,7 +121,7 @@ fun ArtistDetailScreen(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                        items(artistDetails!!.topSongs) { song ->
+                                        items(artistDetails?.topSongs ?: emptyList()) { song ->
                                                 HorizontalSongItem(
                                                         song = song,
                                                         onSongClick = onSongClick,
@@ -152,7 +152,7 @@ fun ArtistDetailScreen(
                                         contentPadding = PaddingValues(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                        items(artistDetails!!.albums) { album ->
+                                        items(artistDetails?.albums ?: emptyList()) { album ->
                                                 HorizontalAlbumItem(
                                                         album = album,
                                                         onAlbumClick = onAlbumClick
@@ -183,7 +183,7 @@ fun ArtistDetailScreen(
                                                 )
                                 )
                                 Text(
-                                        text = artistDetails!!.description!!,
+                                        text = artistDetails?.description ?: "",
                                         style = MaterialTheme.typography.bodyMedium,
                                         modifier =
                                                 Modifier.padding(

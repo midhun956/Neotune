@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Done
@@ -42,15 +43,26 @@ fun YouTubeMusicSearchScreen(
     val selectedFilter by viewModel.selectedFilter
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
+        TextField(
                 value = query,
                 onValueChange = {
                     query = it
                     viewModel.onQueryChange(it)
                 },
-                placeholder = { Text("Search songs, artists, albums") },
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                placeholder = {
+                    Text(
+                            text = "Search songs, artists, albums",
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                leadingIcon = {
+                    Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(
@@ -58,11 +70,24 @@ fun YouTubeMusicSearchScreen(
                                     query = ""
                                     viewModel.onQueryChange("")
                                 }
-                        ) { Icon(Icons.Default.Clear, contentDescription = "Clear") }
+                        ) {
+                            Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 },
                 singleLine = true,
-                shape = CircleShape
+                colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                ),
+                shape = RoundedCornerShape(24.dp)
         )
 
         LazyRow(
@@ -97,7 +122,8 @@ fun YouTubeMusicSearchScreen(
         } else {
             LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp)
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(searchResults) { item ->
                     when (item) {
@@ -106,7 +132,6 @@ fun YouTubeMusicSearchScreen(
                         is AlbumResult -> AlbumRowItem(item, onClick = { onAlbumClick(item) })
                         is PlaylistResult -> PlaylistRowItem(item)
                     }
-                    HorizontalDivider()
                 }
             }
         }

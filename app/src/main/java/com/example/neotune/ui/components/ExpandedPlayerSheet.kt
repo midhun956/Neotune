@@ -15,6 +15,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -32,8 +33,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
+import com.example.neotune.AddToPlaylistSheet
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongResult
 import com.example.neotune.formatTime
@@ -169,9 +173,15 @@ fun ExpandedPlayerSheet(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(24.dp)
             ) {
-            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.Start)) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close")
-            }
+            // Centered Premium Drag Handle Pill (clickable to collapse)
+            Box(
+                modifier = Modifier
+                    .width(40.dp)
+                    .height(5.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.3f))
+                    .clickable { onClose() }
+            )
             Spacer(Modifier.weight(1f))
             if (highResUrl != null) {
                 Image(
@@ -207,10 +217,16 @@ fun ExpandedPlayerSheet(
                     textAlign = TextAlign.Center
             )
             Text(
-                    song.artist ?: "Unknown Artist",
+                    text = song.artist ?: "Unknown Artist",
                     style = MaterialTheme.typography.titleMedium,
                     color = secondaryContentColor,
-                    textAlign = TextAlign.Center
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.clickable {
+                        song.artist?.let {
+                            viewModel.searchAndNavigateToArtist(it)
+                            onClose()
+                        }
+                    }
             )
             Spacer(Modifier.weight(1f))
 
@@ -296,30 +312,6 @@ fun ExpandedPlayerSheet(
             ) {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More")
-                    if (showMenu) {
-                        DropdownMenu(expanded = true, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                    text = { Text("Add to queue") },
-                                    onClick = {
-                                        viewModel.addToQueue(song)
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.AutoMirrored.Filled.QueueMusic, null)
-                                    }
-                            )
-                            DropdownMenuItem(
-                                    text = { Text("Add to playlist") },
-                                    onClick = {
-                                        showMenu = false
-                                        showPlaylistDialog = true
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.AutoMirrored.Filled.PlaylistAdd, null)
-                                    }
-                            )
-                        }
-                    }
                 }
                 IconButton(onClick = { showQueue = true }) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show Queue")
@@ -408,32 +400,120 @@ fun ExpandedPlayerSheet(
         }
     }
 
-    if (showPlaylistDialog) {
-        AlertDialog(
-                onDismissRequest = { showPlaylistDialog = false },
-                title = { Text("Add to playlist") },
-                text = {
-                    Column {
-                        TextButton(
-                                onClick = {
-                                    showPlaylistDialog = false
-                                    showCreatePlaylistDialog = true
-                                }
-                        ) { Text("Create new playlist") }
-                        viewModel.playlists.value.keys.forEach { playlistName ->
-                            TextButton(
-                                    onClick = {
-                                        onAddToPlaylist(playlistName)
-                                        showPlaylistDialog = false
-                                    }
-                            ) { Text(playlistName) }
+    // 3-Dot Options Bottom Sheet
+    if (showMenu) {
+        ModalBottomSheet(
+            onDismissRequest = { showMenu = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+            ) {
+                // Song Header
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (song.thumbnailUrl != null) {
+                        Image(
+                            painter = rememberAsyncImagePainter(song.thumbnailUrl),
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = song.title,
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = song.artist ?: "Unknown Artist",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                )
+
+                // Option: Add to playlist
+                OptionItem(
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    title = "Add to playlist",
+                    subtitle = "Add this song to your playlists",
+                    onClick = {
+                        showMenu = false
+                        showPlaylistDialog = true
+                    }
+                )
+
+                // Option: Download / Caching
+                val videoId = song.videoId
+                val isDownloaded = viewModel.downloadedSongs.value.containsKey(videoId)
+                val isDownloading = viewModel.activeDownloads.value.contains(videoId)
+
+                if (isDownloading) {
+                    OptionItem(
+                        icon = Icons.Filled.Cancel,
+                        title = "Stop downloading",
+                        subtitle = "Cancel background downloading",
+                        tint = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            viewModel.cancelDownload(videoId)
+                            showMenu = false
+                        }
+                    )
+                } else {
+                    OptionItem(
+                        icon = if (isDownloaded) Icons.Filled.CheckCircle else Icons.Filled.Download,
+                        title = if (isDownloaded) "Remove download" else "Download song",
+                        subtitle = if (isDownloaded) "Delete cached audio from device" else "Save track for offline playback",
+                        tint = if (isDownloaded) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        onClick = {
+                            if (isDownloaded) {
+                                viewModel.removeDownload(videoId)
+                            } else {
+                                viewModel.downloadSong(song)
+                            }
+                            showMenu = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    // Add to Playlist bottom sheet
+    if (showPlaylistDialog) {
+        AddToPlaylistSheet(
+                playlists = viewModel.playlists.value,
+                onPlaylistSelected = { playlistName ->
+                    onAddToPlaylist(playlistName)
+                    showPlaylistDialog = false
                 },
-                confirmButton = {}
+                onCreatePlaylist = {
+                    showCreatePlaylistDialog = true
+                },
+                onDismiss = { showPlaylistDialog = false }
         )
     }
 
+    // Create Playlist dialog (opened from the sheet)
     if (showCreatePlaylistDialog) {
         AlertDialog(
                 onDismissRequest = { showCreatePlaylistDialog = false },
@@ -442,7 +522,8 @@ fun ExpandedPlayerSheet(
                     OutlinedTextField(
                             value = newPlaylistName,
                             onValueChange = { newPlaylistName = it },
-                            label = { Text("Playlist Name") }
+                            label = { Text("Playlist Name") },
+                            singleLine = true
                     )
                 },
                 confirmButton = {
@@ -460,5 +541,46 @@ fun ExpandedPlayerSheet(
                     TextButton(onClick = { showCreatePlaylistDialog = false }) { Text("Cancel") }
                 }
         )
+    }
+}
+
+@Composable
+private fun OptionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(24.dp))
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = tint
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }

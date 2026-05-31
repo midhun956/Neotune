@@ -52,6 +52,7 @@ import com.example.neotune.ui.screens.HomeScreen
 import com.example.neotune.ui.screens.SettingsScreen
 import com.example.neotune.ui.screens.LibraryScreen
 import com.example.neotune.ui.screens.LikedSongsScreen
+import com.example.neotune.ui.screens.DownloadsScreen
 import com.example.neotune.ui.screens.PlaylistDetailScreen
 import com.example.neotune.ui.screens.YouTubeMusicSearchScreen
 import com.example.neotune.ui.theme.NeotuneTheme
@@ -141,6 +142,7 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
     var showSheet by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     var showLikedSongs by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
     var showPlaylistDetail by remember { mutableStateOf(false) }
     var selectedPlaylistName by remember { mutableStateOf<String?>(null) }
     var showDeletePlaylistDialog by remember { mutableStateOf(false) }
@@ -153,7 +155,6 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
     val duration = remember { mutableLongStateOf(0L) }
     val isPlaying = remember { mutableStateOf(false) }
 
-    var showMiniPlaylistDialog by remember { mutableStateOf(false) }
     var showMiniCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newMiniPlaylistName by remember { mutableStateOf("") }
     val haptic = LocalHapticFeedback.current
@@ -167,6 +168,22 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
     LaunchedEffect(showSheet) {
         if (showSheet) {
             isSheetActive = true
+        }
+    }
+
+    // React to "View Artist" / "View Album" navigation triggered from long-press sheets
+    val navigateToArtist by viewModel.navigateToArtistDetail
+    val navigateToAlbum by viewModel.navigateToAlbumDetail
+    LaunchedEffect(navigateToArtist) {
+        if (navigateToArtist) {
+            showArtistDetail = true
+            viewModel.clearArtistNavigation()
+        }
+    }
+    LaunchedEffect(navigateToAlbum) {
+        if (navigateToAlbum) {
+            showAlbumDetail = true
+            viewModel.clearAlbumNavigation()
         }
     }
 
@@ -226,6 +243,16 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                             !showArtistDetail &&
                             !showPlaylistDetail &&
                             !showLikedSongs &&
+                            showDownloads
+    ) { showDownloads = false }
+    BackHandler(
+            enabled =
+                    !showSheet &&
+                            !showAlbumDetail &&
+                            !showArtistDetail &&
+                            !showPlaylistDetail &&
+                            !showLikedSongs &&
+                            !showDownloads &&
                             selectedTab != 0
     ) { selectedTab = 0 }
 
@@ -358,7 +385,10 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                         onClick = { showSheet = true },
                                         isLiked = viewModel.isLiked(viewModel.selectedSong.value!!),
                                         onLike = { viewModel.toggleLike(viewModel.selectedSong.value!!) },
-                                        onAddToPlaylist = { showMiniPlaylistDialog = true },
+                                        onAddToPlaylist = {
+                                            viewModel.songToAddToPlaylist.value = viewModel.selectedSong.value
+                                            viewModel.showAddToPlaylistSheet.value = true
+                                        },
                                         onBoundsChange = {},
                                         playbackPosition = playbackPosition.longValue,
                                         duration = duration.longValue
@@ -501,7 +531,14 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                                     song
                                             )
                                         },
-                                        viewModel = viewModel
+                                        onPlaylistRenamed = { newName ->
+                                            selectedPlaylistName = newName
+                                        },
+                                        viewModel = viewModel,
+                                        isPlaying = isPlaying.value,
+                                        onPlayPauseToggle = {
+                                            if (isPlaying.value) controller?.pause() else controller?.play()
+                                        }
                                 )
                             }
                             showLikedSongs -> {
@@ -511,26 +548,29 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                         onSongClick = { song ->
                                             viewModel.selectSong(song)
                                             showSheet = true
-                                        }
+                                        },
+                                        viewModel = viewModel
                                 )
                             }
-                            else -> {
-                                LibraryScreen(
-                                        likedSongsCount = viewModel.likedSongs.value.size,
-                                        playlists = viewModel.playlists.value,
-                                        playlistSongCounts = viewModel.playlistSongCounts.value,
-                                        onCreatePlaylist = { name -> viewModel.createPlaylist(name) },
-                                        onPlaylistClick = { playlistName ->
-                                            selectedPlaylistName = playlistName
-                                            showPlaylistDetail = true
+                            showDownloads -> {
+                                DownloadsScreen(
+                                        onBack = { showDownloads = false },
+                                        onSongClick = { song ->
+                                            viewModel.selectSong(song)
+                                            showSheet = true
                                         },
-                                        onPlaylistLongClick = { playlistName ->
-                                            playlistToDelete = playlistName
-                                            showDeletePlaylistDialog = true
-                                        },
-                                        onLikedSongsClick = { showLikedSongs = true }
+                                        viewModel = viewModel
                                 )
                             }
+                            else -> LibraryScreen(
+                                         onPlaylistClick = { playlistName ->
+                                             selectedPlaylistName = playlistName
+                                             showPlaylistDetail = true
+                                         },
+                                         onLikedSongsClick = { showLikedSongs = true },
+                                         onDownloadsClick = { showDownloads = true },
+                                         viewModel = viewModel
+                                 )
                         }
                     }
                 }
@@ -560,33 +600,24 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
             )
         }
 
-        // Mini Playlist Selection Dialog
-        if (showMiniPlaylistDialog && viewModel.selectedSong.value != null) {
-            AlertDialog(
-                    onDismissRequest = { showMiniPlaylistDialog = false },
-                    title = { Text("Add to playlist") },
-                    text = {
-                        Column {
-                            TextButton(
-                                    onClick = {
-                                        showMiniPlaylistDialog = false
-                                        showMiniCreatePlaylistDialog = true
-                                    }
-                            ) { Text("Create new playlist") }
-                            viewModel.playlists.value.keys.forEach { playlistName ->
-                                TextButton(
-                                        onClick = {
-                                            viewModel.addSongToPlaylist(
-                                                    playlistName,
-                                                    viewModel.selectedSong.value!!
-                                            )
-                                            showMiniPlaylistDialog = false
-                                        }
-                                ) { Text(playlistName) }
-                            }
-                        }
+        // Mini Playlist Selection Sheet
+        val showAddToPlaylistSheet by viewModel.showAddToPlaylistSheet
+        val songToAddToPlaylist by viewModel.songToAddToPlaylist
+        if (showAddToPlaylistSheet && songToAddToPlaylist != null) {
+            AddToPlaylistSheet(
+                    playlists = viewModel.playlists.value,
+                    onPlaylistSelected = { playlistName ->
+                        viewModel.addSongToPlaylist(playlistName, songToAddToPlaylist!!)
+                        viewModel.showAddToPlaylistSheet.value = false
+                        viewModel.songToAddToPlaylist.value = null
                     },
-                    confirmButton = {}
+                    onCreatePlaylist = {
+                        showMiniCreatePlaylistDialog = true
+                    },
+                    onDismiss = {
+                        viewModel.showAddToPlaylistSheet.value = false
+                        viewModel.songToAddToPlaylist.value = null
+                    }
             )
         }
 
@@ -606,6 +637,11 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                 onClick = {
                                     if (newMiniPlaylistName.isNotBlank()) {
                                         viewModel.createPlaylist(newMiniPlaylistName)
+                                        songToAddToPlaylist?.let { song ->
+                                            viewModel.addSongToPlaylist(newMiniPlaylistName, song)
+                                        }
+                                        viewModel.showAddToPlaylistSheet.value = false
+                                        viewModel.songToAddToPlaylist.value = null
                                         showMiniCreatePlaylistDialog = false
                                         newMiniPlaylistName = ""
                                     }

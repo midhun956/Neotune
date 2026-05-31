@@ -1,8 +1,10 @@
 package com.example.neotune.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -10,7 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.example.neotune.AlbumTrack
 import com.example.neotune.SearchViewModel
+import com.example.neotune.SongOptionsSheet
+import com.example.neotune.SongResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,31 +49,27 @@ fun AlbumDetailScreen(viewModel: SearchViewModel, onBack: () -> Unit) {
         return
     }
 
-    Scaffold(
-            topBar = {
-                TopAppBar(
-                        title = { Text(details.title, maxLines = 1) },
-                        navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(
-                                        Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Back"
-                                )
-                            }
-                        },
-                        colors =
-                                TopAppBarDefaults.topAppBarColors(
-                                        containerColor = MaterialTheme.colorScheme.background
-                                )
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // Custom lightweight header row (matching PlaylistDetailScreen visual hierarchy)
+        Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = MaterialTheme.colorScheme.onBackground
                 )
             }
-    ) { padding ->
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+        }
+
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
             item {
                 Column(
                         modifier =
                                 Modifier.fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 24.dp),
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     val highResUrl =
@@ -112,7 +112,12 @@ fun AlbumDetailScreen(viewModel: SearchViewModel, onBack: () -> Unit) {
             }
 
             itemsIndexed(details.tracks) { index, track ->
-                AlbumTrackRowItem(track = track, albumImageUrl = details.thumbnailUrl) { _ ->
+                AlbumTrackRowItem(
+                        track = track,
+                        albumImageUrl = details.thumbnailUrl,
+                        albumTitle = details.title,
+                        viewModel = viewModel
+                ) { _ ->
                     viewModel.playAlbumSong(details, index)
                 }
             }
@@ -124,12 +129,24 @@ fun AlbumDetailScreen(viewModel: SearchViewModel, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun AlbumTrackRowItem(track: AlbumTrack, albumImageUrl: String?, onClick: (AlbumTrack) -> Unit) {
+fun AlbumTrackRowItem(
+        track: AlbumTrack,
+        albumImageUrl: String?,
+        albumTitle: String = "",
+        viewModel: SearchViewModel? = null,
+        onClick: (AlbumTrack) -> Unit
+) {
+    var showOptionsSheet by remember { mutableStateOf(false) }
+
     Row(
             modifier =
                     Modifier.fillMaxWidth()
-                            .clickable { onClick(track) }
+                            .combinedClickable(
+                                    onClick = { onClick(track) },
+                                    onLongClick = { showOptionsSheet = true }
+                            )
                             .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
     ) {
@@ -168,5 +185,45 @@ fun AlbumTrackRowItem(track: AlbumTrack, albumImageUrl: String?, onClick: (Album
                     color = Color.Gray
             )
         }
+    }
+
+    if (showOptionsSheet && viewModel != null) {
+        val song = SongResult(
+                title = track.title,
+                artist = track.artists,
+                thumbnailUrl = albumImageUrl,
+                videoId = track.videoId,
+                album = albumTitle,
+                duration = track.duration
+        )
+        val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+        val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+        SongOptionsSheet(
+                song = song,
+                isLiked = viewModel.isLiked(song),
+                onDismiss = { showOptionsSheet = false },
+                onPlayNext = { viewModel.playNext(song) },
+                onAddToPlaylist = {
+                    viewModel.songToAddToPlaylist.value = song
+                    viewModel.showAddToPlaylistSheet.value = true
+                },
+                onAddToQueue = { viewModel.addToQueue(song) },
+                onLike = { viewModel.toggleLike(song) },
+                onViewArtist = {
+                    song.artist?.let { viewModel.searchAndNavigateToArtist(it) }
+                },
+                onViewAlbum = {
+                    song.album?.let { viewModel.searchAndNavigateToAlbum(it) }
+                },
+                isDownloaded = isDownloaded,
+                isDownloading = isDownloading,
+                onDownloadToggle = {
+                    if (isDownloaded) {
+                        viewModel.removeDownload(song.videoId)
+                    } else {
+                        viewModel.downloadSong(song)
+                    }
+                }
+        )
     }
 }

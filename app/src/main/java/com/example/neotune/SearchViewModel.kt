@@ -5,6 +5,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import android.net.Uri
+import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -42,6 +43,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoadingAlbumDetails = mutableStateOf(false)
     val isLoadingAlbumDetails: State<Boolean> = _isLoadingAlbumDetails
 
+    // --- Navigation triggers (set by ViewModel, consumed by MainActivity) ---
+    val navigateToArtistDetail = mutableStateOf(false)
+    val navigateToAlbumDetail = mutableStateOf(false)
+    val songToAddToPlaylist = mutableStateOf<SongResult?>(null)
+    val showAddToPlaylistSheet = mutableStateOf(false)
+    private var isNavigatingToArtist = false
+    private var isNavigatingToAlbum = false
+
     // --- General State ---
     private val _isLoading = mutableStateOf(false)
     val isLoading: State<Boolean> = _isLoading
@@ -61,6 +70,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     val queue = mutableStateOf<List<SongResult>>(emptyList())
     private val _queue
         get() = queue
+    val recommendedVideoIds = mutableSetOf<String>()
     var exoPlayer: Player? = null
 
     // --- User Library State ---
@@ -79,6 +89,14 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     val backendIp = mutableStateOf("10.242.137.112")
     val isCheckingConnection = mutableStateOf(false)
     val connectionStatus = mutableStateOf<Boolean?>(null)
+
+    // --- Offline Caching and Downloading States ---
+    val downloadedSongs = mutableStateOf<Map<String, OfflineTrack>>(emptyMap())
+    val activeDownloads = mutableStateOf<Set<String>>(emptySet())
+    val cacheStorageLimit = mutableStateOf("1.0 GB")
+    val currentCacheSize = mutableStateOf(0L)
+    private val downloadJobs = mutableMapOf<String, Job>()
+    private val downloadSemaphore = kotlinx.coroutines.sync.Semaphore(3)
 
     // --- Recently Played ---
     private val _recentlyPlayed = mutableStateOf<List<SongResult>>(emptyList())
@@ -120,6 +138,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val storedIp = LocalStorage.loadBackendIp(ctx)
         backendIp.value = storedIp
         Config.BACKEND_BASE_URL = formatBackendUrl(storedIp)
+
+        cacheStorageLimit.value = LocalStorage.loadCacheLimit(ctx)
+        refreshCacheStats()
     }
 
     private fun formatBackendUrl(input: String): String {
@@ -242,10 +263,18 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         _selectedSong.value = song
         broadcastLikeState(song)
         if (clearQueue) {
+            recommendedVideoIds.clear()
             _queue.value = listOf(song)
             fetchAndQueueRecommendations(song.videoId)
         }
         playSelectedSong(song.videoId)
+        
+        // Update last played timestamp in offline registry for LRP
+        viewModelScope.launch {
+            DownloadManager.updateLastPlayed(ctx, song.videoId)
+            refreshCacheStats()
+        }
+
         // Track recently played (deduplicate, max 30)
         val current = _recentlyPlayed.value.toMutableList()
         current.removeAll { it.videoId == song.videoId }
@@ -370,18 +399,81 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         LocalStorage.savePlaylists(ctx, currentPlaylists)
     }
 
+    fun renamePlaylist(oldName: String, newName: String) {
+        val currentPlaylists = _playlists.value.toMutableMap()
+        if (currentPlaylists.containsKey(oldName) && newName.isNotBlank() && oldName != newName) {
+            val songs = currentPlaylists.remove(oldName) ?: emptyList()
+            currentPlaylists[newName] = songs
+            _playlists.value = currentPlaylists
+            updatePlaylistSongCounts()
+            LocalStorage.savePlaylists(ctx, currentPlaylists)
+        }
+    }
+
+    fun playPlaylist(playlistName: String, shuffle: Boolean = false) {
+        val songs = _playlists.value[playlistName] ?: return
+        if (songs.isEmpty()) return
+
+        val listToPlay = if (shuffle) songs.shuffled() else songs
+        val firstSong = listToPlay.first()
+        selectSong(firstSong, clearQueue = true)
+
+        if (listToPlay.size > 1) {
+            _queue.value = listToPlay.drop(1)
+        }
+    }
+
+    fun playPlaylistSong(playlistName: String, clickedSong: SongResult) {
+        val songs = _playlists.value[playlistName] ?: return
+        val startIndex = songs.indexOfFirst { it.videoId == clickedSong.videoId }
+        if (startIndex == -1) return
+
+        selectSong(clickedSong, clearQueue = true)
+        if (startIndex + 1 < songs.size) {
+            _queue.value = songs.drop(startIndex + 1)
+        }
+    }
+
     fun addToQueue(song: SongResult) {
         val currentQueue = _queue.value.toMutableList()
-        if (!currentQueue.any { it.videoId == song.videoId }) {
+        currentQueue.removeAll { it.videoId == song.videoId }
+        recommendedVideoIds.remove(song.videoId)
+
+        // Find the first index of a recommended song to insert before it
+        val firstRecIndex = currentQueue.indexOfFirst { recommendedVideoIds.contains(it.videoId) }
+        if (firstRecIndex != -1) {
+            currentQueue.add(firstRecIndex, song)
+        } else {
             currentQueue.add(song)
-            _queue.value = currentQueue
         }
+        _queue.value = currentQueue
+    }
+
+    fun playNext(song: SongResult) {
+        val currentQueue = _queue.value.toMutableList()
+        currentQueue.removeAll { it.videoId == song.videoId }
+        recommendedVideoIds.remove(song.videoId)
+        currentQueue.add(0, song)
+        _queue.value = currentQueue
     }
 
     fun removeFromQueue(song: SongResult) {
         val currentQueue = _queue.value.toMutableList()
         currentQueue.removeAll { it.videoId == song.videoId }
+        recommendedVideoIds.remove(song.videoId)
         _queue.value = currentQueue
+    }
+
+    fun movePlaylistSong(playlistName: String, fromIndex: Int, toIndex: Int) {
+        val currentPlaylists = _playlists.value.toMutableMap()
+        val songs = currentPlaylists[playlistName]?.toMutableList() ?: return
+        if (fromIndex in songs.indices && toIndex in songs.indices) {
+            val s = songs.removeAt(fromIndex)
+            songs.add(toIndex, s)
+            currentPlaylists[playlistName] = songs
+            _playlists.value = currentPlaylists
+            LocalStorage.savePlaylists(ctx, currentPlaylists)
+        }
     }
 
     fun playSong(song: SongResult) {
@@ -436,6 +528,51 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun searchAndNavigateToArtist(artistName: String) {
+        if (isNavigatingToArtist || _isLoadingArtistDetails.value) return
+        isNavigatingToArtist = true
+        viewModelScope.launch {
+            try {
+                // Parse primary artist out of multi-artist string
+                val primaryArtist = artistName.split(Regex("[,&]|\\b(feat|ft)\\b", RegexOption.IGNORE_CASE))
+                        .firstOrNull()?.trim() ?: artistName
+
+                val response = YouTubeMusicApi.search(primaryArtist, "Artists")
+                val results = parseSearchResults(response, "artists")
+                val artist = results.filterIsInstance<ArtistResult>().firstOrNull { it.browseId != null }
+                if (artist?.browseId != null) {
+                    loadArtistDetails(artist.browseId)
+                    navigateToArtistDetail.value = true
+                }
+            } catch (e: Exception) { /* silently ignore */ }
+            finally {
+                isNavigatingToArtist = false
+            }
+        }
+    }
+
+    fun searchAndNavigateToAlbum(albumName: String) {
+        if (isNavigatingToAlbum || _isLoadingAlbumDetails.value) return
+        isNavigatingToAlbum = true
+        viewModelScope.launch {
+            try {
+                val response = YouTubeMusicApi.search(albumName, "Albums")
+                val results = parseSearchResults(response, "albums")
+                val album = results.filterIsInstance<AlbumResult>().firstOrNull { it.browseId != null }
+                if (album?.browseId != null) {
+                    loadAlbumDetails(album.browseId)
+                    navigateToAlbumDetail.value = true
+                }
+            } catch (e: Exception) { /* silently ignore */ }
+            finally {
+                isNavigatingToAlbum = false
+            }
+        }
+    }
+
+    fun clearArtistNavigation() { navigateToArtistDetail.value = false }
+    fun clearAlbumNavigation() { navigateToAlbumDetail.value = false }
+
     fun loadTrending() {
         viewModelScope.launch {
             _isLoadingTrending.value = true
@@ -474,8 +611,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         val song = selectedSong.value
         viewModelScope.launch {
             try {
-                val audioUrl = YouTubeMusicApi.getBackendAudioUrl(videoId)
-                audioUrl?.let {
+                val localFile = File(ctx.filesDir, "offline_cache/$videoId")
+                if (localFile.exists()) {
+                    // Play cached file directly
                     val metadataBuilder = MediaMetadata.Builder()
                     if (song != null) {
                         metadataBuilder.setTitle(song.title)
@@ -483,7 +621,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         metadataBuilder.setArtworkUri(Uri.parse(song.thumbnailUrl ?: ""))
                     }
                     val mediaItem = MediaItem.Builder()
-                            .setUri(it)
+                            .setUri(Uri.fromFile(localFile))
                             .setMediaMetadata(metadataBuilder.build())
                             .build()
                     exoPlayer?.apply {
@@ -492,9 +630,30 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                         prepare()
                         play()
                     }
-                    _streamUrl.value = it
+                    _streamUrl.value = Uri.fromFile(localFile).toString()
+                } else {
+                    val audioUrl = YouTubeMusicApi.getBackendAudioUrl(videoId)
+                    audioUrl?.let {
+                        val metadataBuilder = MediaMetadata.Builder()
+                        if (song != null) {
+                            metadataBuilder.setTitle(song.title)
+                            metadataBuilder.setArtist(song.artist ?: "Unknown Artist")
+                            metadataBuilder.setArtworkUri(Uri.parse(song.thumbnailUrl ?: ""))
+                        }
+                        val mediaItem = MediaItem.Builder()
+                                .setUri(it)
+                                .setMediaMetadata(metadataBuilder.build())
+                                .build()
+                        exoPlayer?.apply {
+                            stop()
+                            setMediaItem(mediaItem)
+                            prepare()
+                            play()
+                        }
+                        _streamUrl.value = it
+                    }
+                            ?: run { _error.value = "Unable to get audio stream." }
                 }
-                        ?: run { _error.value = "Unable to get audio stream." }
             } catch (e: Exception) {
                 _error.value = "Failed to get audio stream: ${e.message}"
             }
@@ -519,6 +678,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                                 currentQueue.none { it.videoId == newSong.videoId }
                             }
                     if (newSongsToAdd.isNotEmpty()) {
+                        recommendedVideoIds.addAll(newSongsToAdd.map { it.videoId })
                         _queue.value = currentQueue + newSongsToAdd
                     }
                 }
@@ -750,4 +910,76 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             null
         }
     }
+
+    // --- Offline Cache Management Actions ---
+    fun refreshCacheStats() {
+        viewModelScope.launch {
+            downloadedSongs.value = DownloadManager.loadRegistry(ctx)
+            currentCacheSize.value = DownloadManager.getTotalCacheSize(ctx)
+        }
+    }
+
+    fun downloadSong(song: SongResult) {
+        val videoId = song.videoId
+        if (activeDownloads.value.contains(videoId) || downloadedSongs.value.containsKey(videoId)) return
+
+        activeDownloads.value = activeDownloads.value + videoId
+        val job = viewModelScope.launch {
+            try {
+                downloadSemaphore.acquire()
+                try {
+                    DownloadManager.downloadSong(ctx, song, cacheStorageLimit.value)
+                } finally {
+                    downloadSemaphore.release()
+                }
+            } finally {
+                activeDownloads.value = activeDownloads.value - videoId
+                downloadJobs.remove(videoId)
+                refreshCacheStats()
+            }
+        }
+        downloadJobs[videoId] = job
+    }
+
+    fun cancelDownload(videoId: String) {
+        downloadJobs[videoId]?.cancel()
+        downloadJobs.remove(videoId)
+        activeDownloads.value = activeDownloads.value - videoId
+        viewModelScope.launch {
+            DownloadManager.deleteDownload(ctx, videoId)
+            refreshCacheStats()
+        }
+    }
+
+    fun downloadPlaylist(playlistName: String) {
+        val songs = playlists.value[playlistName] ?: return
+        songs.forEach { song ->
+            downloadSong(song)
+        }
+    }
+
+    fun removeDownload(videoId: String) {
+        cancelDownload(videoId)
+        viewModelScope.launch {
+            DownloadManager.deleteDownload(ctx, videoId)
+            refreshCacheStats()
+        }
+    }
+
+    fun setCacheLimit(limit: String) {
+        cacheStorageLimit.value = limit
+        LocalStorage.saveCacheLimit(ctx, limit)
+        viewModelScope.launch {
+            DownloadManager.checkAndEvictCache(ctx, 0L, limit)
+            refreshCacheStats()
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            DownloadManager.clearCache(ctx)
+            refreshCacheStats()
+        }
+    }
 }
+

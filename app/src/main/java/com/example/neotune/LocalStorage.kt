@@ -105,4 +105,13 @@ object LocalStorage {
     fun loadBackendIp(context: Context): String {
         return prefs(context).getString("backend_ip", "10.242.137.112") ?: "10.242.137.112"
     }
+
+    // --- Cache Storage Limit ---
+    fun saveCacheLimit(context: Context, limit: String) {
+        prefs(context).edit().putString("cache_storage_limit", limit).apply()
+    }
+
+    fun loadCacheLimit(context: Context): String {
+        return prefs(context).getString("cache_storage_limit", "1.0 GB") ?: "1.0 GB"
+    }
 }
