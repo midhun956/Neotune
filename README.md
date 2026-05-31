@@ -61,20 +61,28 @@ Neotune/
 ## 🚀 Quick Start Guide
 
 ### 1. Launch the API Server
-Ensure you have Python 3.8+ installed. Navigate to the `backend/` directory and install the requirements:
-```bash
-cd backend
-pip install -r requirements.txt
-```
+Ensure you have Python 3.8+ installed. You can launch the server using either of these simple methods:
 
-Launch the server:
-```bash
-python run.py
-```
-The unified launcher automatically finds your local IP, verifies extraction dependencies, resolves port conflicts, and spins up the server.
+* **Method A (Lightweight Release - Recommended)**:
+  1. Head over to the **[Releases](../../releases)** page and download the lightweight **`Neotune-Server.zip`** package.
+  2. Extract the zip file on your computer.
+  3. Navigate to the extracted folder in your terminal, and install the requirements & run:
+     ```bash
+     pip install -r requirements.txt
+     python run.py
+     ```
+* **Method B (Cloned Git Source)**:
+  1. Clone this repository and navigate to the `backend/` directory in your terminal.
+  2. Install requirements & run:
+     ```bash
+     pip install -r requirements.txt
+     python run.py
+     ```
+
+The unified launcher will automatically discover your computer's local IP address, update the `yt-dlp` extraction binaries, check for zombie port conflicts on port `8000`, and boot up the FastAPI server.
 
 ### 2. Install & Connect the Android App
-No need to deal with code compilation or Android Studio! 
+No need to deal with code compilation or Android Studio!
 
 1. Head over to the **[Releases](../../releases)** page of this repository.
 2. Download the latest compiled **`Neotune.apk`** file and install it directly on your Android phone.
