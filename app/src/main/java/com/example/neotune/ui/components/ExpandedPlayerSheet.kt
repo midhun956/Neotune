@@ -41,6 +41,14 @@ import com.example.neotune.AddToPlaylistSheet
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongResult
 import com.example.neotune.formatTime
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.platform.LocalDensity
+import com.example.neotune.SongOptionsSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -330,6 +338,9 @@ fun ExpandedPlayerSheet(
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 val queue = viewModel.queue.value
                 val history = viewModel.playbackHistory.value
+                var draggedIndex by remember { mutableStateOf<Int?>(null) }
+                var dragOffset by remember { mutableStateOf(0f) }
+                val density = LocalDensity.current
 
                 Text(
                         text = "Queue & History",
@@ -380,8 +391,11 @@ fun ExpandedPlayerSheet(
                                 )
                             }
                             itemsIndexed(queue) { index, queuedSong ->
-                                SongRowItem(
+                                QueueSongRow(
                                         song = queuedSong,
+                                        index = index,
+                                        isDragged = draggedIndex == index,
+                                        dragOffset = dragOffset,
                                         onSongClick = {
                                             // Jump to this song in the queue
                                             viewModel.playSong(queuedSong)
@@ -389,7 +403,32 @@ fun ExpandedPlayerSheet(
                                             viewModel.queue.value = queue.drop(index + 1)
                                             showQueue = false
                                         },
-                                        viewModel = viewModel
+                                        viewModel = viewModel,
+                                        onDragStart = {
+                                            draggedIndex = index
+                                            dragOffset = 0f
+                                        },
+                                        onDragEnd = {
+                                            draggedIndex = null
+                                            dragOffset = 0f
+                                        },
+                                        onDrag = { delta ->
+                                            val currentDragged = draggedIndex
+                                            if (currentDragged != null) {
+                                                dragOffset += delta
+                                                val itemHeightPx = with(density) { 72.dp.toPx() }
+                                                
+                                                if (dragOffset > itemHeightPx && currentDragged < queue.size - 1) {
+                                                    viewModel.moveQueueSong(currentDragged, currentDragged + 1)
+                                                    draggedIndex = currentDragged + 1
+                                                    dragOffset -= itemHeightPx
+                                                } else if (dragOffset < -itemHeightPx && currentDragged > 0) {
+                                                    viewModel.moveQueueSong(currentDragged, currentDragged - 1)
+                                                    draggedIndex = currentDragged - 1
+                                                    dragOffset += itemHeightPx
+                                                }
+                                            }
+                                        }
                                 )
                             }
                         }
@@ -584,3 +623,179 @@ private fun OptionItem(
         }
     }
 }
+
+@Composable
+fun QueueSongRow(
+    song: SongResult,
+    index: Int,
+    isDragged: Boolean,
+    dragOffset: Float,
+    onSongClick: () -> Unit,
+    viewModel: SearchViewModel,
+    modifier: Modifier = Modifier,
+    onDragStart: () -> Unit,
+    onDragEnd: () -> Unit,
+    onDrag: (Float) -> Unit
+) {
+    var showOptionsSheet by remember { mutableStateOf(false) }
+    
+    // Scale and elevation animation for high premium aesthetics
+    val scale by animateFloatAsState(targetValue = if (isDragged) 1.05f else 1.0f, label = "scale")
+    val elevation = if (isDragged) 8.dp else 0.dp
+    
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                translationY = if (isDragged) dragOffset else 0f
+                scaleX = scale
+                scaleY = scale
+            }
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isDragged) {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                } else {
+                    Color.Transparent
+                }
+            )
+            .shadow(elevation, shape = RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = onSongClick,
+                onLongClick = { showOptionsSheet = true }
+            )
+            .padding(horizontal = 8.dp, vertical = 8.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Thumbnail
+            if (song.thumbnailUrl != null) {
+                Image(
+                    painter = rememberAsyncImagePainter(model = song.thumbnailUrl),
+                    contentDescription = song.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = "Song",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            
+            Spacer(Modifier.width(16.dp))
+            
+            // Details
+            Column(Modifier.weight(1f)) {
+                Text(
+                    song.title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    song.artist ?: "Unknown Artist",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.Gray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Duration
+            if (song.duration != null) {
+                Text(
+                    song.duration,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+
+            // Reorder Handle matching visual cues of playlist detail screen
+            Box(
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { onDragStart() },
+                            onDragEnd = { onDragEnd() },
+                            onDragCancel = { onDragEnd() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                onDrag(dragAmount.y)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Reorder,
+                    contentDescription = "Drag to reorder",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    }
+
+    if (showOptionsSheet) {
+        val isDownloaded = viewModel.downloadedSongs.value.containsKey(song.videoId)
+        val isDownloading = viewModel.activeDownloads.value.contains(song.videoId)
+        SongOptionsSheet(
+                song = song,
+                isLiked = viewModel.isLiked(song),
+                onDismiss = { showOptionsSheet = false },
+                onPlayNext = { viewModel.playNext(song) },
+                onAddToPlaylist = {
+                    viewModel.songToAddToPlaylist.value = song
+                    viewModel.showAddToPlaylistSheet.value = true
+                    showOptionsSheet = false
+                },
+                onAddToQueue = {
+                    viewModel.addToQueue(song)
+                    showOptionsSheet = false
+                },
+                onLike = {
+                    viewModel.toggleLike(song)
+                    showOptionsSheet = false
+                },
+                onViewArtist = {
+                    song.artist?.let { viewModel.searchAndNavigateToArtist(it) }
+                    showOptionsSheet = false
+                },
+                onViewAlbum = {
+                    song.album?.let { viewModel.searchAndNavigateToAlbum(it) }
+                    showOptionsSheet = false
+                },
+                isDownloaded = isDownloaded,
+                isDownloading = isDownloading,
+                onDownloadToggle = {
+                    if (isDownloading) {
+                        viewModel.cancelDownload(song.videoId)
+                    } else if (isDownloaded) {
+                        viewModel.removeDownload(song.videoId)
+                    } else {
+                        viewModel.downloadSong(song)
+                    }
+                    showOptionsSheet = false
+                }
+        )
+    }
+}
+

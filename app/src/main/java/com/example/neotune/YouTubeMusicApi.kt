@@ -23,6 +23,7 @@ object YouTubeMusicApi {
             }
 
     suspend fun ping(baseUrl: String): Boolean {
+        if (baseUrl.isBlank()) return false
         return try {
             val response = client.get(baseUrl)
             response.status.value in 200..299

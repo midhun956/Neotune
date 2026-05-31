@@ -71,7 +71,23 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _queue
         get() = queue
     val recommendedVideoIds = mutableSetOf<String>()
-    var exoPlayer: Player? = null
+
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                playNext()
+            }
+        }
+    }
+
+    private var _exoPlayer: Player? = null
+    var exoPlayer: Player?
+        get() = _exoPlayer
+        set(value) {
+            _exoPlayer?.removeListener(playerListener)
+            _exoPlayer = value
+            _exoPlayer?.addListener(playerListener)
+        }
 
     // --- User Library State ---
     private val _likedSongs = mutableStateOf<List<SongResult>>(emptyList())
@@ -84,9 +100,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     var loopMode = mutableIntStateOf(Player.REPEAT_MODE_OFF)
     val playbackHistory = mutableStateOf<List<SongResult>>(emptyList())
     val nowPlayingBackgroundStyle = mutableStateOf("gradient")
-    val appThemeStyle = mutableStateOf("material")
+    val appThemeStyle = mutableStateOf("amoled")
     val amoledAccentColor = mutableStateOf("purple")
-    val backendIp = mutableStateOf("10.242.137.112")
+    val backendIp = mutableStateOf("")
     val isCheckingConnection = mutableStateOf(false)
     val connectionStatus = mutableStateOf<Boolean?>(null)
 
@@ -145,6 +161,9 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun formatBackendUrl(input: String): String {
         var cleaned = input.trim()
+        if (cleaned.isBlank()) {
+            return ""
+        }
         if (cleaned.startsWith("http://")) {
             cleaned = cleaned.removePrefix("http://")
         } else if (cleaned.startsWith("https://")) {
@@ -154,7 +173,7 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             cleaned = cleaned.removeSuffix("/")
         }
         if (cleaned.isBlank()) {
-            return "http://10.242.137.112:8000"
+            return ""
         }
         return if (cleaned.contains(":")) {
             "http://$cleaned"
@@ -298,6 +317,15 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             }
         } else {
             fetchAndQueueRecommendations(currentSong.videoId)
+        }
+    }
+
+    fun moveQueueSong(fromIndex: Int, toIndex: Int) {
+        val currentQueue = queue.value.toMutableList()
+        if (fromIndex in currentQueue.indices && toIndex in currentQueue.indices) {
+            val movedItem = currentQueue.removeAt(fromIndex)
+            currentQueue.add(toIndex, movedItem)
+            queue.value = currentQueue
         }
     }
 

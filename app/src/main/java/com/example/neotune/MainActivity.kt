@@ -269,18 +269,7 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
         }
     }
 
-    // Auto-advance to next on song end
-    DisposableEffect(controller) {
-        val listener = object : Player.Listener {
-            override fun onPlayerStateChanged(playWhenReady: Boolean, playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) {
-                    viewModel.playNext()
-                }
-            }
-        }
-        controller?.addListener(listener)
-        onDispose { controller?.removeListener(listener) }
-    }
+
 
     Box(
             modifier =

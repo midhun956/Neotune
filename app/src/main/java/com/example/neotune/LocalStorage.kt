@@ -85,7 +85,7 @@ object LocalStorage {
     }
 
     fun loadAppThemeStyle(context: Context): String {
-        return prefs(context).getString("app_theme_style", "material") ?: "material"
+        return prefs(context).getString("app_theme_style", "amoled") ?: "amoled"
     }
 
     // --- AMOLED Accent Color ---
@@ -103,7 +103,7 @@ object LocalStorage {
     }
 
     fun loadBackendIp(context: Context): String {
-        return prefs(context).getString("backend_ip", "10.242.137.112") ?: "10.242.137.112"
+        return prefs(context).getString("backend_ip", "") ?: ""
     }
 
     // --- Cache Storage Limit ---
