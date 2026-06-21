@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.example.neotune.SongResult
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @Composable
 fun AnimatedMiniPlayer(
@@ -39,12 +41,16 @@ fun AnimatedMiniPlayer(
         playbackPosition: Long,
         duration: Long,
 ) {
+    val view = LocalView.current
     // Modern Floating Card Style Mini Player (inspired by Metrolist & YouTube Music)
     Card(
             modifier =
                     Modifier.fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .clickable(onClick = onClick)
+                            .clickable {
+                                NeotuneHaptics.playClick(view)
+                                onClick()
+                            }
                             .onGloballyPositioned { onBoundsChange(it.size) },
             shape = RoundedCornerShape(16.dp),
             colors =
@@ -105,7 +111,9 @@ fun AnimatedMiniPlayer(
                 val playPauseDescription = if (isPlaying) "Pause" else "Play"
                 
                 IconButton(
-                        onClick = onPlayPause,
+                        onClick = {
+                            onPlayPause()
+                        },
                         colors = IconButtonDefaults.iconButtonColors(
                                 contentColor = MaterialTheme.colorScheme.primary
                         )
@@ -119,7 +127,10 @@ fun AnimatedMiniPlayer(
 
                 // Add to Playlist Button
                 IconButton(
-                        onClick = onAddToPlaylist,
+                        onClick = {
+                            NeotuneHaptics.playTick(view)
+                            onAddToPlaylist()
+                        },
                         colors = IconButtonDefaults.iconButtonColors(
                                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                         )
@@ -135,7 +146,10 @@ fun AnimatedMiniPlayer(
                 val likeIcon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder
                 val likeColor = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                 IconButton(
-                        onClick = onLike,
+                        onClick = {
+                            NeotuneHaptics.playTick(view)
+                            onLike()
+                        },
                         colors = IconButtonDefaults.iconButtonColors(
                                 contentColor = likeColor
                         )

@@ -32,6 +32,8 @@ import com.example.neotune.PlaylistResult
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongOptionsSheet
 import com.example.neotune.SongResult
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -43,13 +45,19 @@ fun HorizontalSongItem(
         onViewAlbum: (() -> Unit)? = null
 ) {
         var showOptionsSheet by remember { mutableStateOf(false) }
+        val view = LocalView.current
 
         Column(
                 modifier =
                         Modifier.width(140.dp)
                                 .combinedClickable(
-                                        onClick = { onSongClick(song) },
-                                        onLongClick = { showOptionsSheet = true }
+                                        onClick = {
+                                            onSongClick(song)
+                                        },
+                                        onLongClick = {
+                                            NeotuneHaptics.playLongPress(view)
+                                            showOptionsSheet = true
+                                        }
                                 )
                                 .padding(bottom = 8.dp)
         ) {
@@ -138,10 +146,14 @@ fun HorizontalSongItem(
 
 @Composable
 fun HorizontalAlbumItem(album: AlbumResult, onAlbumClick: (AlbumResult) -> Unit) {
+        val view = LocalView.current
         Column(
                 modifier =
                         Modifier.width(140.dp)
-                                .clickable { onAlbumClick(album) }
+                                .clickable {
+                                    NeotuneHaptics.playClick(view)
+                                    onAlbumClick(album)
+                                }
                                 .padding(bottom = 8.dp)
         ) {
                 if (album.thumbnailUrl != null) {
@@ -203,14 +215,20 @@ fun SongRowItem(
         onViewAlbum: (() -> Unit)? = null
 ) {
         var showOptionsSheet by remember { mutableStateOf(false) }
+        val view = LocalView.current
 
         Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier =
                         Modifier.fillMaxWidth()
                                 .combinedClickable(
-                                        onClick = { onSongClick(song) },
-                                        onLongClick = { showOptionsSheet = true }
+                                        onClick = {
+                                            onSongClick(song)
+                                        },
+                                        onLongClick = {
+                                            NeotuneHaptics.playLongPress(view)
+                                            showOptionsSheet = true
+                                        }
                                 )
                                 .padding(vertical = 8.dp)
         ) {
@@ -328,11 +346,15 @@ fun SongRowItem(
 
 @Composable
 fun AlbumRowItem(album: AlbumResult, onClick: () -> Unit) {
+        val view = LocalView.current
         Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier =
                         Modifier.fillMaxWidth()
-                                .clickable(onClick = onClick)
+                                .clickable {
+                                    NeotuneHaptics.playClick(view)
+                                    onClick()
+                                }
                                 .padding(vertical = 8.dp)
         ) {
                 if (album.thumbnailUrl != null) {
@@ -442,11 +464,15 @@ fun PlaylistRowItem(playlist: PlaylistResult) {
 
 @Composable
 fun ArtistRowItem(artist: ArtistResult, onClick: () -> Unit) {
+        val view = LocalView.current
         Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier =
                         Modifier.fillMaxWidth()
-                                .clickable(onClick = onClick)
+                                .clickable {
+                                    NeotuneHaptics.playClick(view)
+                                    onClick()
+                                }
                                 .padding(vertical = 8.dp)
         ) {
                 if (artist.thumbnailUrl != null) {

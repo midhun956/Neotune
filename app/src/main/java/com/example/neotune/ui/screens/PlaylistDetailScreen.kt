@@ -46,6 +46,8 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongOptionsSheet
 import com.example.neotune.SongResult
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +63,7 @@ fun PlaylistDetailScreen(
         onPlayPauseToggle: () -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var showMoreSheet by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -278,14 +281,16 @@ fun PlaylistDetailScreen(
                                 val rowHeightPx = 200f
                                 val currentDragged = draggedIndex
                                 if (currentDragged != null) {
-                                    if (dragOffset > rowHeightPx / 2f && currentDragged < songs.size - 1) {
+                                if (dragOffset > rowHeightPx / 2f && currentDragged < songs.size - 1) {
                                         viewModel.movePlaylistSong(playlistName, currentDragged, currentDragged + 1)
                                         draggedIndex = currentDragged + 1
                                         dragOffset -= rowHeightPx
+                                        NeotuneHaptics.playDragSnap(view)
                                     } else if (dragOffset < -rowHeightPx / 2f && currentDragged > 0) {
                                         viewModel.movePlaylistSong(playlistName, currentDragged, currentDragged - 1)
                                         draggedIndex = currentDragged - 1
                                         dragOffset += rowHeightPx
+                                        NeotuneHaptics.playDragSnap(view)
                                     }
                                 }
                             },

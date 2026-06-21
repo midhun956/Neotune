@@ -49,6 +49,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalDensity
 import com.example.neotune.SongOptionsSheet
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +79,7 @@ fun ExpandedPlayerSheet(
     var showQueue by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val view = LocalView.current
     val backgroundStyle = viewModel.nowPlayingBackgroundStyle.value
     val highResUrl = remember(song.thumbnailUrl) {
         song.thumbnailUrl?.replace(Regex("=w\\d+-h\\d+-"), "=w1080-h1080-")
@@ -188,7 +191,10 @@ fun ExpandedPlayerSheet(
                     .height(5.dp)
                     .clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.3f))
-                    .clickable { onClose() }
+                    .clickable {
+                        NeotuneHaptics.playTick(view)
+                        onClose()
+                    }
             )
             Spacer(Modifier.weight(1f))
             if (highResUrl != null) {
@@ -273,10 +279,16 @@ fun ExpandedPlayerSheet(
                 val playPauseDescription = if (isPlaying) "Pause" else "Play"
                 val loopIconTint = if (isLooping) MaterialTheme.colorScheme.primary else secondaryContentColor
 
-                IconButton(onClick = onLike) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playTick(view)
+                    onLike()
+                }) {
                     Icon(imageVector = likeIcon, contentDescription = "Like", tint = likeIconTint)
                 }
-                IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playClick(view)
+                    onPrevious()
+                }, modifier = Modifier.size(48.dp)) {
                     Icon(
                             Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
@@ -285,7 +297,9 @@ fun ExpandedPlayerSheet(
                     )
                 }
                 IconButton(
-                        onClick = onPlayPause,
+                        onClick = {
+                            onPlayPause()
+                        },
                         modifier =
                                 Modifier.size(64.dp)
                                         .background(Color.White, CircleShape)
@@ -297,7 +311,10 @@ fun ExpandedPlayerSheet(
                             modifier = Modifier.size(42.dp)
                     )
                 }
-                IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playClick(view)
+                    onNext()
+                }, modifier = Modifier.size(48.dp)) {
                     Icon(
                             Icons.Default.SkipNext,
                             contentDescription = "Next",
@@ -305,7 +322,10 @@ fun ExpandedPlayerSheet(
                             tint = contentColor
                     )
                 }
-                IconButton(onClick = onToggleLoop) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playTick(view)
+                    onToggleLoop()
+                }) {
                     Icon(
                             imageVector = Icons.Default.Repeat,
                             contentDescription = "Loop",
@@ -318,10 +338,16 @@ fun ExpandedPlayerSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = { showMenu = true }) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playTick(view)
+                    showMenu = true
+                }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "More")
                 }
-                IconButton(onClick = { showQueue = true }) {
+                IconButton(onClick = {
+                    NeotuneHaptics.playTick(view)
+                    showQueue = true
+                }) {
                     Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Show Queue")
                 }
             }
@@ -422,10 +448,12 @@ fun ExpandedPlayerSheet(
                                                     viewModel.moveQueueSong(currentDragged, currentDragged + 1)
                                                     draggedIndex = currentDragged + 1
                                                     dragOffset -= itemHeightPx
+                                                    NeotuneHaptics.playDragSnap(view)
                                                 } else if (dragOffset < -itemHeightPx && currentDragged > 0) {
                                                     viewModel.moveQueueSong(currentDragged, currentDragged - 1)
                                                     draggedIndex = currentDragged - 1
                                                     dragOffset += itemHeightPx
+                                                    NeotuneHaptics.playDragSnap(view)
                                                 }
                                             }
                                         }

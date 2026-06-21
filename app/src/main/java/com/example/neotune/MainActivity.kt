@@ -36,8 +36,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
@@ -110,6 +110,7 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
     }
 
     val context = LocalContext.current
+    val view = LocalView.current
     DisposableEffect(context) {
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(ctx: android.content.Context?, intent: Intent?) {
@@ -157,7 +158,6 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
 
     var showMiniCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newMiniPlaylistName by remember { mutableStateOf("") }
-    val haptic = LocalHapticFeedback.current
     val horizontalOffset = remember { Animatable(0f) }
 
     var parentHeightPx by remember { mutableStateOf(0f) }
@@ -335,6 +335,7 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                                                 }
                                                             },
                                                     onDragStarted = {
+                                                        NeotuneHaptics.playGestureStart(view)
                                                         coroutineScope.launch {
                                                             horizontalOffset.snapTo(0f)
                                                         }
@@ -344,12 +345,12 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                                             if (horizontalOffset.value < -150f ||
                                                                             velocity < -500f
                                                             ) {
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                NeotuneHaptics.playGestureActivate(view)
                                                                 viewModel.playNext()
                                                             } else if (horizontalOffset.value > 150f ||
                                                                             velocity > 500f
                                                             ) {
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                NeotuneHaptics.playGestureActivate(view)
                                                                 viewModel.playPrevious()
                                                             }
                                                             horizontalOffset.animateTo(
@@ -394,7 +395,10 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                         },
                                         label = { Text("Home") },
                                         selected = selectedTab == 0,
-                                        onClick = { selectedTab = 0 }
+                                        onClick = {
+                                            NeotuneHaptics.playTick(view)
+                                            selectedTab = 0
+                                        }
                                 )
                                 NavigationBarItem(
                                         icon = {
@@ -405,7 +409,10 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                         },
                                         label = { Text("Search") },
                                         selected = selectedTab == 1,
-                                        onClick = { selectedTab = 1 }
+                                        onClick = {
+                                            NeotuneHaptics.playTick(view)
+                                            selectedTab = 1
+                                        }
                                 )
                                 NavigationBarItem(
                                         icon = {
@@ -416,7 +423,10 @@ fun MainScreen(controllerFuture: ListenableFuture<MediaController>, viewModel: S
                                         },
                                         label = { Text("Library") },
                                         selected = selectedTab == 2,
-                                        onClick = { selectedTab = 2 }
+                                        onClick = {
+                                            NeotuneHaptics.playTick(view)
+                                            selectedTab = 2
+                                        }
                                 )
                             }
                         }

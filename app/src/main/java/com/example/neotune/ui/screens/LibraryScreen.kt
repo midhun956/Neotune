@@ -22,6 +22,8 @@ import com.example.neotune.Playlist
 import com.example.neotune.PlaylistCard
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongResult
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +36,7 @@ fun LibraryScreen(
     val likedSongsCount = viewModel.likedSongs.value.size
     val playlists = viewModel.playlists.value
     val playlistSongCounts = viewModel.playlistSongCounts.value
+    val view = LocalView.current
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -46,7 +49,10 @@ fun LibraryScreen(
     Scaffold(
             floatingActionButton = {
                 FloatingActionButton(
-                        onClick = { showCreateDialog = true },
+                        onClick = {
+                            NeotuneHaptics.playClick(view)
+                            showCreateDialog = true
+                        },
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ) { Icon(Icons.Filled.Add, contentDescription = "New Playlist") }
@@ -83,7 +89,9 @@ fun LibraryScreen(
                                             songCount = likedSongsCount
                                     ),
                             songs = viewModel.likedSongs.value,
-                            onClick = { onLikedSongsClick() }
+                            onClick = {
+                                onLikedSongsClick()
+                            }
                     )
                 }
 
@@ -98,7 +106,9 @@ fun LibraryScreen(
                                             songCount = viewModel.downloadedSongs.value.size
                                     ),
                             songs = viewModel.downloadedSongs.value.values.map { it.song },
-                            onClick = { onDownloadsClick() }
+                            onClick = {
+                                onDownloadsClick()
+                            }
                     )
                 }
 
@@ -112,8 +122,11 @@ fun LibraryScreen(
                                             songCount = playlistSongCounts[playlistName] ?: 0
                                     ),
                             songs = songs,
-                            onClick = { onPlaylistClick(playlistName) },
+                            onClick = {
+                                onPlaylistClick(playlistName)
+                            },
                             onLongClick = {
+                                NeotuneHaptics.playLongPress(view)
                                 activePlaylistForSheet = playlistName
                                 showOptionsSheet = true
                             }
@@ -145,6 +158,7 @@ fun LibraryScreen(
                         modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    NeotuneHaptics.playTick(view)
                                     showOptionsSheet = false
                                     showRenameDialog = true
                                 }
@@ -160,6 +174,7 @@ fun LibraryScreen(
                         modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
+                                    NeotuneHaptics.playTick(view)
                                     showOptionsSheet = false
                                     showDeleteDialog = true
                                 }

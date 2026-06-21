@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.neotune.SearchViewModel
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,6 +35,7 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val currentStyle = viewModel.nowPlayingBackgroundStyle.value
+    val view = LocalView.current
 
     Scaffold(
         topBar = {
@@ -91,7 +94,10 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.setNowPlayingBackgroundStyle("gradient") }
+                            .clickable {
+                                NeotuneHaptics.playTick(view)
+                                viewModel.setNowPlayingBackgroundStyle("gradient")
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -123,7 +129,10 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.setNowPlayingBackgroundStyle("solid") }
+                            .clickable {
+                                NeotuneHaptics.playTick(view)
+                                viewModel.setNowPlayingBackgroundStyle("solid")
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -176,7 +185,10 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.setAppThemeStyle("material") }
+                            .clickable {
+                                NeotuneHaptics.playTick(view)
+                                viewModel.setAppThemeStyle("material")
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -208,7 +220,10 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.setAppThemeStyle("amoled") }
+                            .clickable {
+                                NeotuneHaptics.playTick(view)
+                                viewModel.setAppThemeStyle("amoled")
+                            }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -260,7 +275,10 @@ fun SettingsScreen(
                                             color = if (activeAccent == name) Color.White else Color.Transparent,
                                             shape = CircleShape
                                         )
-                                        .clickable { viewModel.setAmoledAccent(name) },
+                                        .clickable {
+                                            NeotuneHaptics.playTick(view)
+                                            viewModel.setAmoledAccent(name)
+                                        },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (activeAccent == name) {
@@ -497,7 +515,10 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { viewModel.setCacheLimit(limitOption) }
+                                .clickable {
+                                    NeotuneHaptics.playTick(view)
+                                    viewModel.setCacheLimit(limitOption)
+                                }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

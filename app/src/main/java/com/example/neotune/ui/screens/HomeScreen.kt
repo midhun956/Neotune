@@ -29,6 +29,8 @@ import coil.compose.rememberAsyncImagePainter
 import com.example.neotune.SearchViewModel
 import com.example.neotune.SongOptionsSheet
 import com.example.neotune.SongResult
+import androidx.compose.ui.platform.LocalView
+import com.example.neotune.ui.components.NeotuneHaptics
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,6 +46,7 @@ fun HomeScreen(
     val isLoadingTrending = viewModel.isLoadingTrending.value
 
     val isRefreshing = isLoadingTrending || isLoadingQuickPicks
+    val view = LocalView.current
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -83,7 +86,9 @@ fun HomeScreen(
                     modifier = Modifier.align(Alignment.CenterStart)
             )
             IconButton(
-                    onClick = onSettingsClick,
+                    onClick = {
+                        onSettingsClick()
+                    },
                     modifier = Modifier.align(Alignment.CenterEnd)
             ) {
                 Icon(
@@ -189,11 +194,17 @@ private fun HomeCarousel(
 @Composable
 private fun HomeCard(song: SongResult, onClick: () -> Unit, viewModel: SearchViewModel) {
     var showOptionsSheet by remember { mutableStateOf(false) }
+    val view = LocalView.current
     Column(
             modifier = Modifier.width(150.dp)
                     .combinedClickable(
-                            onClick = onClick,
-                            onLongClick = { showOptionsSheet = true }
+                            onClick = {
+                                onClick()
+                            },
+                            onLongClick = {
+                                NeotuneHaptics.playLongPress(view)
+                                showOptionsSheet = true
+                            }
                     )
                     .padding(bottom = 4.dp)
     ) {
